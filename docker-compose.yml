@@ -1,0 +1,84 @@
+# 一键启动本地依赖：MySQL + Redis + RocketMQ(Namesrv/Broker/Dashboard)
+# 启动：docker compose up -d
+# 停止：docker compose down （加 -v 会清空数据卷）
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: dp-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: dp_center
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-authentication-plugin=mysql_native_password
+      # 兼容旧版 SQL 脚本中的 '0000-00-00 00:00:00' 默认值
+      - --sql-mode=ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+    volumes:
+      # 首次启动自动建库并导入表结构与数据
+      - ./src/main/resources/db/dp_center.sql:/docker-entrypoint-initdb.d/dp_center.sql:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: dp-redis
+    ports:
+      # 宿主机 6379 已被其它项目占用，映射到 6380
+      - "6380:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:4.9.7
+    container_name: dp-rocketmq-namesrv
+    ports:
+      - "9876:9876"
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m -Xmn256m"
+
+  rocketmq-broker:
+    image: apache/rocketmq:4.9.7
+    container_name: dp-rocketmq-broker
+    # 镜像默认用户无权在只读 conf 目录下写日志，以 root 运行
+    user: root
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+    depends_on:
+      - rocketmq-namesrv
+    command: sh mqbroker -c /home/rocketmq/rocketmq-4.9.7/conf/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m -Xmn256m"
+    volumes:
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-4.9.7/conf/broker.conf:ro
+      - rocketmq-store:/home/rocketmq/store
+
+  rocketmq-dashboard:
+    image: apacherocketmq/rocketmq-dashboard:latest
+    container_name: dp-rocketmq-dashboard
+    ports:
+      - "8085:8082"
+    depends_on:
+      - rocketmq-broker
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-namesrv:9876"
+
+volumes:
+  mysql-data:
+  redis-data:
+  rocketmq-store:

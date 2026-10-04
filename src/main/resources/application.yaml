@@ -1,0 +1,40 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: dp-center
+  datasource:
+    driver-class-name: com.mysql.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/dp_center?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: "123456"
+  redis:
+    host: 127.0.0.1
+    # 宿主机 6379 被占用，docker 映射到 6380
+    port: 6380
+    # password: your_redis_password
+    lettuce:
+      pool:
+        max-active: 10
+        max-idle: 10
+        min-idle: 1
+        time-between-eviction-runs: 10s
+  jackson:
+    default-property-inclusion: non_null # JSON处理时忽略非空字段
+mybatis-plus:
+  type-aliases-package: com.dpcenter.entity # 别名扫描包
+# ===== RocketMQ 消息队列 =====
+rocketmq:
+  name-server: 127.0.0.1:9876
+# ===== 秒杀方案：A=入口预扣+事务消息；B=限流入队+消费者校验 =====
+seckill:
+  mode: A
+  # 二级限流第二层：业务滑动窗口（第一层在 OpenResty 网关令牌桶）
+  rate-limit:
+    sliding-window:
+      enabled: true
+      window-ms: 1000      # 窗口 1 秒
+      max-requests: 5      # 同一用户窗口内最多 5 次秒杀请求
+logging:
+  level:
+    com.dpcenter: info
